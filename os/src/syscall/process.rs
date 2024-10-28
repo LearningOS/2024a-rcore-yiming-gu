@@ -1,16 +1,11 @@
 //! Process management syscalls
 use crate::{
     config::MAX_SYSCALL_NUM,
+    mm::{memory_set::MapPermission, translated_byte_buffer},
     task::{
-        change_program_brk, exit_current_and_run_next, suspend_current_and_run_next, TaskStatus,
-        current_user_token,
+        change_program_brk, current_task_map_area, current_user_token, exit_current_and_run_next, suspend_current_and_run_next, TaskStatus
     },
-    timer::get_time_us,
-    mm::translated_byte_buffer,
-    mm::memory_set::{
-        MapArea,
-        MapType, MapPermission,
-    },
+    timer::get_time_us
 };
 
 #[repr(C)]
@@ -85,14 +80,14 @@ pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
     if _port & 0x4 != 0 {
         map_permission |= MapPermission::X;
     }
-    let map_area = MapArea::new(_start.into(), (_start+_len).into(), MapType::Framed, map_permission);
+    current_task_map_area(_start, _start+_len, map_permission);
     0
 }
 
 // YOUR JOB: Implement munmap.
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {
     trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
-    -1
+    0
 }
 /// change data segment size
 pub fn sys_sbrk(size: i32) -> isize {

@@ -15,6 +15,7 @@ mod switch;
 mod task;
 
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::MapPermission;
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
@@ -203,9 +204,16 @@ pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
 }
 
-/// Change the current 'Running' task's program break
-pub fn current_task_control_block() -> TaskControlBlock {
-    let inner = TASK_MANAGER.inner.exclusive_access();
+/// Map a range of virtual address to physical frames with specific permission
+pub fn current_task_map_area(start_va: usize, end_va: usize, map_permission: MapPermission) {
+    let mut inner = TASK_MANAGER.inner.exclusive_access();
     let cur = inner.current_task;
-    inner.tasks[cur].clone()
+    inner.tasks[cur].memory_set.insert_framed_area(start_va.into(), end_va.into(), map_permission);
 }
+
+// /// Unmap a range of virtual address
+// pub fn current_task_unmap_area(start_va: usize, end_va: usize) {
+//     // let mut inner = TASK_MANAGER.inner.exclusive_access();
+//     // let cur = inner.current_task;
+//     // inner.tasks[cur].memory_set.;
+// }
