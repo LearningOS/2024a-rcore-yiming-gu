@@ -272,6 +272,7 @@ pub struct MapArea {
 }
 
 impl MapArea {
+    /// Create a new `MapArea`.
     pub fn new(
         start_va: VirtAddr,
         end_va: VirtAddr,
@@ -287,6 +288,7 @@ impl MapArea {
             map_perm,
         }
     }
+    /// map one virtual page number to a physical page number
     pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         let ppn: PhysPageNum;
         match self.map_type {
@@ -302,6 +304,7 @@ impl MapArea {
         let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
         page_table.map(vpn, ppn, pte_flags);
     }
+    /// unmap one virtual page number
     #[allow(unused)]
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         if self.map_type == MapType::Framed {
@@ -309,17 +312,20 @@ impl MapArea {
         }
         page_table.unmap(vpn);
     }
+    /// map all virtual page numbers
     pub fn map(&mut self, page_table: &mut PageTable) {
         for vpn in self.vpn_range {
             self.map_one(page_table, vpn);
         }
     }
+    /// unmap all virtual page numbers
     #[allow(unused)]
     pub fn unmap(&mut self, page_table: &mut PageTable) {
         for vpn in self.vpn_range {
             self.unmap_one(page_table, vpn);
         }
     }
+    /// shrink the area to new_end
     #[allow(unused)]
     pub fn shrink_to(&mut self, page_table: &mut PageTable, new_end: VirtPageNum) {
         for vpn in VPNRange::new(new_end, self.vpn_range.get_end()) {
@@ -327,6 +333,7 @@ impl MapArea {
         }
         self.vpn_range = VPNRange::new(self.vpn_range.get_start(), new_end);
     }
+    /// append the area to new_end
     #[allow(unused)]
     pub fn append_to(&mut self, page_table: &mut PageTable, new_end: VirtPageNum) {
         for vpn in VPNRange::new(self.vpn_range.get_end(), new_end) {
@@ -361,7 +368,9 @@ impl MapArea {
 #[derive(Copy, Clone, PartialEq, Debug)]
 /// map type for memory set: identical or framed
 pub enum MapType {
+    /// identical mapping
     Identical,
+    /// framed mapping
     Framed,
 }
 

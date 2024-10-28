@@ -7,6 +7,10 @@ use crate::{
     },
     timer::get_time_us,
     mm::translated_byte_buffer,
+    mm::memory_set::{
+        MapArea,
+        MapType, MapPermission,
+    },
 };
 
 #[repr(C)]
@@ -47,17 +51,15 @@ pub fn sys_yield() -> isize {
 pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
     let us = get_time_us();
-    let sec = us / 1_000_000;
-    let usec = us % 1_000_000;
-    let buf = _ts as *const u8;
-    let buffers = translated_byte_buffer(current_user_token(), buf, 16);
-    let sec_bytes = sec.to_ne_bytes();
-    let usec_bytes = usec.to_ne_bytes();
+    let sec_bytes = (us / 1_000_000).to_ne_bytes();
+    let usec_bytes = (us % 1_000_000).to_ne_bytes();
+    let ts = _ts as *const u8;
+    let tus = (_ts as usize + 8) as *const u8;
+    let mut sec= translated_byte_buffer(current_user_token(), ts, 8);
+    let mut usec = translated_byte_buffer(current_user_token(), tus, 8);
 
-    for buffer in buffers {
-        buffer[..8].copy_from_slice(&sec_bytes);
-        buffer[8..].copy_from_slice(&usec_bytes);
-    }
+    sec[0].copy_from_slice(&sec_bytes[..]);
+    usec[0].copy_from_slice(&usec_bytes[..]);
 
     0
 }
@@ -73,7 +75,18 @@ pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
 // YOUR JOB: Implement mmap.
 pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
     trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
-    -1
+    let mut map_permission = MapPermission::U;
+    if _port & 0x1 != 0 {
+        map_permission |= MapPermission::R;
+    }
+    if _port & 0x2 != 0 {
+        map_permission |= MapPermission::W;
+    }
+    if _port & 0x4 != 0 {
+        map_permission |= MapPermission::X;
+    }
+    let map_area = MapArea::new(_start.into(), (_start+_len).into(), MapType::Framed, map_permission);
+    0
 }
 
 // YOUR JOB: Implement munmap.

@@ -202,3 +202,10 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
 }
+
+/// Change the current 'Running' task's program break
+pub fn current_task_control_block() -> TaskControlBlock {
+    let inner = TASK_MANAGER.inner.exclusive_access();
+    let cur = inner.current_task;
+    inner.tasks[cur].clone()
+}
