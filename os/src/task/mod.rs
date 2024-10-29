@@ -15,7 +15,8 @@ mod switch;
 mod task;
 
 use crate::loader::{get_app_data, get_num_app};
-use crate::mm::MapPermission;
+use crate::mm::{MapPermission, VirtAddr};
+use crate::mm::address::StepByOne;
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
@@ -205,15 +206,46 @@ pub fn change_program_brk(size: i32) -> Option<usize> {
 }
 
 /// Map a range of virtual address to physical frames with specific permission
-pub fn current_task_map_area(start_va: usize, end_va: usize, map_permission: MapPermission) {
+pub fn current_task_map_area(start_va: VirtAddr, end_va: VirtAddr, map_permission: MapPermission) -> isize {
+    let start_vpn = start_va.floor();
+    let end_vpn = end_va.ceil();
     let mut inner = TASK_MANAGER.inner.exclusive_access();
     let cur = inner.current_task;
-    inner.tasks[cur].memory_set.insert_framed_area(start_va.into(), end_va.into(), map_permission);
+    let mut vpn = start_vpn;
+    let memory_set = &inner.tasks[cur].memory_set;
+    while vpn < end_vpn {
+        for area in &memory_set.areas {
+            if area.data_frames.contains_key(&vpn) {
+                return -1;
+            }
+        }
+        vpn.step();
+    }
+    inner.tasks[cur].memory_set.insert_framed_area(start_va, end_va, map_permission);
+    0
 }
 
-// /// Unmap a range of virtual address
-// pub fn current_task_unmap_area(start_va: usize, end_va: usize) {
-//     // let mut inner = TASK_MANAGER.inner.exclusive_access();
-//     // let cur = inner.current_task;
-//     // inner.tasks[cur].memory_set.;
-// }
+/// Unmap a range of virtual address
+pub fn current_task_unmap_area(start_va: VirtAddr, end_va: VirtAddr) -> isize {
+    let mut inner = TASK_MANAGER.inner.exclusive_access();
+    let cur = inner.current_task;
+    let start_vpn = start_va.floor();
+    let end_vpn = end_va.ceil();
+    let mut vpn = start_vpn;
+    let memory_set = &mut inner.tasks[cur].memory_set;
+    while vpn < end_vpn {
+        let mut vpn_mapped = false;
+        for area in &mut memory_set.areas {
+            if area.data_frames.contains_key(&vpn) {
+                area.unmap_one(&mut memory_set.page_table, vpn);
+                vpn.step();
+                vpn_mapped = true;
+                break;
+            }
+        }
+        if !vpn_mapped {
+            return -1;
+        }
+    }
+    return 0;
+}

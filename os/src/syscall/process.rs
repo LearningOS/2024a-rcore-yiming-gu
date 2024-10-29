@@ -1,9 +1,11 @@
 //! Process management syscalls
 use crate::{
     config::MAX_SYSCALL_NUM,
-    mm::{memory_set::MapPermission, translated_byte_buffer},
+    mm::{memory_set::MapPermission, translated_byte_buffer, VirtAddr},
     task::{
-        change_program_brk, current_task_map_area, current_user_token, exit_current_and_run_next, suspend_current_and_run_next, TaskStatus
+        change_program_brk, current_task_map_area, current_user_token, exit_current_and_run_next, suspend_current_and_run_next,
+        current_task_unmap_area,
+        TaskStatus
     },
     timer::get_time_us
 };
@@ -50,7 +52,7 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
     let usec_bytes = (us % 1_000_000).to_ne_bytes();
     let ts = _ts as *const u8;
     let tus = (_ts as usize + 8) as *const u8;
-    let mut sec= translated_byte_buffer(current_user_token(), ts, 8);
+    let mut sec = translated_byte_buffer(current_user_token(), ts, 8);
     let mut usec = translated_byte_buffer(current_user_token(), tus, 8);
 
     sec[0].copy_from_slice(&sec_bytes[..]);
@@ -70,25 +72,36 @@ pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
 // YOUR JOB: Implement mmap.
 pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
     trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
-    let mut map_permission = MapPermission::U;
-    if _port & 0x1 != 0 {
-        map_permission |= MapPermission::R;
+    let start_va = VirtAddr::from(_start);
+    let end_va = VirtAddr::from(_start + _len);
+    if _port & !0x7 != 0 || _port & 0x7 == 0 || start_va.page_offset() != 0 {
+        -1
     }
-    if _port & 0x2 != 0 {
-        map_permission |= MapPermission::W;
+    else {
+        let mut map_permission = MapPermission::U;
+        if _port & 0x1 != 0 {
+            map_permission |= MapPermission::R;
+        }
+        if _port & 0x2 != 0 {
+            map_permission |= MapPermission::W;
+        }
+        if _port & 0x4 != 0 {
+            map_permission |= MapPermission::X;
+        }
+
+        let result = current_task_map_area(start_va, end_va, map_permission);
+        result
     }
-    if _port & 0x4 != 0 {
-        map_permission |= MapPermission::X;
-    }
-    current_task_map_area(_start, _start+_len, map_permission);
-    0
 }
 
 // YOUR JOB: Implement munmap.
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {
     trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
-    0
+    let start_va = VirtAddr::from(_start);
+    let end_va = VirtAddr::from(_start + _len);
+    current_task_unmap_area(start_va, end_va)
 }
+
 /// change data segment size
 pub fn sys_sbrk(size: i32) -> isize {
     trace!("kernel: sys_sbrk");
