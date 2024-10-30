@@ -3,11 +3,10 @@ use crate::{
     config::MAX_SYSCALL_NUM,
     mm::{memory_set::MapPermission, translated_byte_buffer, VirtAddr},
     task::{
-        change_program_brk, current_task_map_area, current_user_token, exit_current_and_run_next, suspend_current_and_run_next,
-        current_task_unmap_area,
-        TaskStatus
+        change_program_brk, current_task_map_area, current_task_unmap_area, current_user_token, exit_current_and_run_next, suspend_current_and_run_next, TaskStatus,
+        current_task_info,
     },
-    timer::get_time_us
+    timer::{get_time_ms, get_time_us},
 };
 
 #[repr(C)]
@@ -51,12 +50,11 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
     let sec_bytes = (us / 1_000_000).to_ne_bytes();
     let usec_bytes = (us % 1_000_000).to_ne_bytes();
     let ts = _ts as *const u8;
-    let tus = (_ts as usize + 8) as *const u8;
-    let mut sec = translated_byte_buffer(current_user_token(), ts, 8);
-    let mut usec = translated_byte_buffer(current_user_token(), tus, 8);
-
-    sec[0].copy_from_slice(&sec_bytes[..]);
-    usec[0].copy_from_slice(&usec_bytes[..]);
+    let mut ts_buf = translated_byte_buffer(current_user_token(), ts, 16);
+    if ts_buf.len() == 1 {
+        ts_buf[0][..8].copy_from_slice(&sec_bytes[..]);
+        ts_buf[0][8..].copy_from_slice(&usec_bytes[..]);
+    }
 
     0
 }
@@ -66,7 +64,28 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
 /// HINT: What if [`TaskInfo`] is splitted by two pages ?
 pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
     trace!("kernel: sys_task_info NOT IMPLEMENTED YET!");
-    -1
+    let (syscall_times, stime) = current_task_info();
+    let run_time = get_time_ms() - stime;
+
+    let task_info = TaskInfo {
+        status: TaskStatus::Running,
+        syscall_times: syscall_times,
+        time: run_time,
+    };
+
+    let ti_len = core::mem::size_of::<TaskInfo>();
+    let mut ti_buf = translated_byte_buffer(current_user_token(), _ti as *const u8, 2016);
+
+    if ti_buf.len() == 1 {
+        unsafe {
+            core::ptr::copy(
+                &task_info as *const TaskInfo as *const u8,
+                ti_buf[0].as_mut_ptr(),
+                ti_len,
+            );
+        }
+    }
+    0
 }
 
 // YOUR JOB: Implement mmap.

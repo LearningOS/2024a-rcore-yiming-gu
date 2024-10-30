@@ -18,7 +18,9 @@ use crate::loader::{get_app_data, get_num_app};
 use crate::mm::{MapPermission, VirtAddr};
 use crate::mm::address::StepByOne;
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
+use crate::config::MAX_SYSCALL_NUM;
 use alloc::vec::Vec;
 use lazy_static::*;
 use switch::__switch;
@@ -81,6 +83,7 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let next_task = &mut inner.tasks[0];
         next_task.task_status = TaskStatus::Running;
+        next_task.task_stime = get_time_ms();
         let next_task_cx_ptr = &next_task.task_cx as *const TaskContext;
         drop(inner);
         let mut _unused = TaskContext::zero_init();
@@ -143,6 +146,9 @@ impl TaskManager {
             let current = inner.current_task;
             inner.tasks[next].task_status = TaskStatus::Running;
             inner.current_task = next;
+            if inner.tasks[next].task_stime == 0 {
+                inner.tasks[next].task_stime = get_time_ms();
+            }
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
             drop(inner);
@@ -248,4 +254,17 @@ pub fn current_task_unmap_area(start_va: VirtAddr, end_va: VirtAddr) -> isize {
         }
     }
     return 0;
+}
+
+/// count the syscall times of current task
+pub fn task_syscall_times(syscall_id: usize) {
+    let mut inner = TASK_MANAGER.inner.exclusive_access();
+    let current_id = inner.current_task;
+    inner.tasks[current_id].task_syscall_times[syscall_id] += 1;
+}
+
+/// count the syscall times of current task
+pub fn current_task_info() -> ([u32; MAX_SYSCALL_NUM], usize) {
+    let inner = TASK_MANAGER.inner.exclusive_access();
+    ((inner.tasks[inner.current_task].task_syscall_times), (inner.tasks[inner.current_task].task_stime))
 }
