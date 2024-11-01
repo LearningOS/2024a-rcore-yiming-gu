@@ -8,7 +8,7 @@ use crate::{
     task::{
         add_task, current_task, current_user_token, exit_current_and_run_next,
         suspend_current_and_run_next, TaskStatus,
-    },
+    }, timer::get_time_us,
 };
 
 #[repr(C)]
@@ -122,7 +122,14 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
         "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let us = get_time_us();
+    let sec = us / 1_000_000;
+    let usec = us % 1_000_000;
+    let token = current_user_token();
+    let ts = translated_refmut(token, _ts);
+    ts.sec = sec;
+    ts.usec = usec;
+    0
 }
 
 /// YOUR JOB: Finish sys_task_info to pass testcases
@@ -171,7 +178,20 @@ pub fn sys_spawn(_path: *const u8) -> isize {
         "kernel:pid[{}] sys_spawn NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let ct = current_task().unwrap();
+
+    let token = current_user_token();
+    let path = translated_str(token, _path);
+
+    if let Some(data) = get_app_data_by_name(path.as_str()) {
+        let new_task = ct.spawn_child_process(data);
+        let new_pid = new_task.pid.0;
+        add_task(new_task);
+        new_pid as isize
+    }
+    else {
+        -1
+    }
 }
 
 // YOUR JOB: Set task priority.
