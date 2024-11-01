@@ -231,6 +231,21 @@ impl TaskControlBlock {
         // ---- release parent PCB
     }
 
+    /// spawn a new child process
+    pub fn spawn_child_process(self: &Arc<Self>, elf_data: &[u8]) -> Arc<Self> {
+        let mut parent_inner = self.inner_exclusive_access();
+
+        let task_control_block = Arc::new(TaskControlBlock::new(elf_data));
+
+        let kernel_stack = kstack_alloc();
+        let kernel_stack_top = kernel_stack.get_top();
+
+        parent_inner.children.push(task_control_block.clone());
+        let trap_cx = task_control_block.inner_exclusive_access().get_trap_cx();
+        trap_cx.kernel_sp = kernel_stack_top;
+        task_control_block
+    }
+
     /// get pid of process
     pub fn getpid(&self) -> usize {
         self.pid.0
