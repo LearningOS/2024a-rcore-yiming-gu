@@ -25,6 +25,18 @@ impl TaskManager {
     pub fn fetch(&mut self) -> Option<Arc<TaskControlBlock>> {
         self.ready_queue.pop_front()
     }
+    /// Add process in the order of stride
+    pub fn add_stride(&mut self, task: Arc<TaskControlBlock>) {
+        let mut iter = self.ready_queue.iter().enumerate();
+        let stride = task.inner_exclusive_access().stride;
+        while let Some((i, next)) = iter.next() {
+            if next.inner_exclusive_access().stride > stride {
+                self.ready_queue.insert(i, task);
+                return;
+            }
+        }
+        self.ready_queue.push_back(task);
+    }
 }
 
 lazy_static! {
@@ -36,7 +48,7 @@ lazy_static! {
 /// Add process to ready queue
 pub fn add_task(task: Arc<TaskControlBlock>) {
     //trace!("kernel: TaskManager::add_task");
-    TASK_MANAGER.exclusive_access().add(task);
+    TASK_MANAGER.exclusive_access().add_stride(task);
 }
 
 /// Take a process out of the ready queue

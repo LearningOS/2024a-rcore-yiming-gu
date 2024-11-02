@@ -108,8 +108,7 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 
 ///Record the number of syscalls of the current task
 pub fn current_task_count_syscall(syscall_id: usize) {
-    let processor = PROCESSOR.exclusive_access();
-    let task = processor.current.as_ref().unwrap();
+    let task = current_task().unwrap();
     let mut task_inner = task.inner_exclusive_access();
     task_inner.task_syscall_times[syscall_id] += 1;
 }
@@ -149,8 +148,7 @@ pub fn current_task_mmap(_start: usize, _len: usize, _port: usize) -> isize {
     let start_vpn = start_va.floor();
     let end_vpn = end_va.ceil();
 
-    let processor = PROCESSOR.exclusive_access();
-    let task = processor.current.as_ref().unwrap();
+    let task = current_task().unwrap();
     let mut task_inner = task.inner_exclusive_access();
     let memory_set = &mut task_inner.memory_set;
 
@@ -185,8 +183,7 @@ pub fn current_task_munmap(_start: usize, _len: usize) -> isize {
     let start_vpn = start_va.floor();
     let end_vpn = end_va.ceil();
 
-    let processor = PROCESSOR.exclusive_access();
-    let task = processor.current.as_ref().unwrap();
+    let task = current_task().unwrap();
     let mut task_inner = task.inner_exclusive_access();
     let memory_set = &mut task_inner.memory_set;
 

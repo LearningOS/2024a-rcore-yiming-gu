@@ -1,7 +1,7 @@
 //! Types related to task management & Functions for completely changing TCB
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-use crate::config::{MAX_SYSCALL_NUM, TRAP_CONTEXT_BASE};
+use crate::config::{BIG_STRIDE, MAX_SYSCALL_NUM, TRAP_CONTEXT_BASE};
 use crate::fs::{File, Stdin, Stdout};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
@@ -77,6 +77,15 @@ pub struct TaskControlBlockInner {
 
     /// task syscall times
     pub task_syscall_times: [u32; MAX_SYSCALL_NUM],
+
+    /// task stride
+    pub stride: usize,
+
+    /// task pass
+    pub pass: usize,
+
+    /// task priority
+    pub prio: usize,
 }
 
 impl TaskControlBlockInner {
@@ -143,6 +152,9 @@ impl TaskControlBlock {
                     program_brk: user_sp,
                     task_stime: 0,
                     task_syscall_times: [0; MAX_SYSCALL_NUM],
+                    stride: 0,
+                    pass: BIG_STRIDE / 16,
+                    prio: 16,
                 })
             },
         };
@@ -226,6 +238,9 @@ impl TaskControlBlock {
                     program_brk: parent_inner.program_brk,
                     task_stime: 0,
                     task_syscall_times: [0; MAX_SYSCALL_NUM],
+                    stride: 0,
+                    pass: BIG_STRIDE / 16,
+                    prio: 16,
                 })
             },
         });
@@ -246,13 +261,9 @@ impl TaskControlBlock {
         let mut parent_inner = self.inner_exclusive_access();
 
         let task_control_block = Arc::new(TaskControlBlock::new(elf_data));
-
-        let kernel_stack = kstack_alloc();
-        let kernel_stack_top = kernel_stack.get_top();
+        task_control_block.inner_exclusive_access().parent = Some(Arc::downgrade(self));
 
         parent_inner.children.push(task_control_block.clone());
-        let trap_cx = task_control_block.inner_exclusive_access().get_trap_cx();
-        trap_cx.kernel_sp = kernel_stack_top;
         task_control_block
     }
 
