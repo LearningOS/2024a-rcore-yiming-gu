@@ -2,7 +2,7 @@
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
 use crate::config::{BIG_STRIDE, MAX_SYSCALL_NUM, TRAP_CONTEXT_BASE};
-use crate::fs::{File, Stdin, Stdout};
+use crate::fs::{File, OSInode, Stdin, Stdout};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
 use crate::trap::{trap_handler, TrapContext};
@@ -64,7 +64,12 @@ pub struct TaskControlBlockInner {
 
     /// It is set when active exit or execution error occurs
     pub exit_code: i32,
+
+    /// File descriptor table
     pub fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
+
+    /// inode table
+    pub inode_table: Vec<Option<Arc<OSInode>>>,
 
     /// Heap bottom
     pub heap_bottom: usize,
@@ -106,6 +111,7 @@ impl TaskControlBlockInner {
             fd
         } else {
             self.fd_table.push(None);
+            self.inode_table.push(None);
             self.fd_table.len() - 1
         }
     }
@@ -148,6 +154,7 @@ impl TaskControlBlock {
                         // 2 -> stderr
                         Some(Arc::new(Stdout)),
                     ],
+                    inode_table: vec![None, None, None,],
                     heap_bottom: user_sp,
                     program_brk: user_sp,
                     task_stime: 0,
@@ -220,6 +227,14 @@ impl TaskControlBlock {
                 new_fd_table.push(None);
             }
         }
+        let mut new_inode_table: Vec<Option<Arc<OSInode>>> = Vec::new();
+        for fd in parent_inner.inode_table.iter() {
+            if let Some(file) = fd {
+                new_inode_table.push(Some(file.clone()));
+            } else {
+                new_inode_table.push(None);
+            }
+        }
         let task_control_block = Arc::new(TaskControlBlock {
             pid: pid_handle,
             kernel_stack,
@@ -234,6 +249,7 @@ impl TaskControlBlock {
                     children: Vec::new(),
                     exit_code: 0,
                     fd_table: new_fd_table,
+                    inode_table: new_inode_table,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
                     task_stime: 0,
@@ -261,7 +277,27 @@ impl TaskControlBlock {
         let mut parent_inner = self.inner_exclusive_access();
 
         let task_control_block = Arc::new(TaskControlBlock::new(elf_data));
+
+        let mut new_fd_table: Vec<Option<Arc<dyn File + Send + Sync>>> = Vec::new();
+        for fd in parent_inner.fd_table.iter() {
+            if let Some(file) = fd {
+                new_fd_table.push(Some(file.clone()));
+            } else {
+                new_fd_table.push(None);
+            }
+        }
+        let mut new_inode_table: Vec<Option<Arc<OSInode>>> = Vec::new();
+        for fd in parent_inner.inode_table.iter() {
+            if let Some(file) = fd {
+                new_inode_table.push(Some(file.clone()));
+            } else {
+                new_inode_table.push(None);
+            }
+        }
+
         task_control_block.inner_exclusive_access().parent = Some(Arc::downgrade(self));
+        task_control_block.inner_exclusive_access().fd_table = new_fd_table;
+        task_control_block.inner_exclusive_access().inode_table = new_inode_table;
 
         parent_inner.children.push(task_control_block.clone());
         task_control_block
