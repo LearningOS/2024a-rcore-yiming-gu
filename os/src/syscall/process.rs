@@ -7,14 +7,18 @@ use crate::{
     mm::{translated_refmut, translated_str},
     task::{
         add_task, current_task, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next, TaskStatus,
-    }, timer::get_time_us,
+        suspend_current_and_run_next, TaskStatus, current_task_info,
+    },
+    timer::get_time_us,
 };
 
 #[repr(C)]
 #[derive(Debug)]
+/// Time value
 pub struct TimeVal {
+    /// Second
     pub sec: usize,
+    /// Microsecond
     pub usec: usize,
 }
 
@@ -22,11 +26,11 @@ pub struct TimeVal {
 #[allow(dead_code)]
 pub struct TaskInfo {
     /// Task status in it's life cycle
-    status: TaskStatus,
+    pub status: TaskStatus,
     /// The numbers of syscall called by task
-    syscall_times: [u32; MAX_SYSCALL_NUM],
+    pub syscall_times: [u32; MAX_SYSCALL_NUM],
     /// Total running time of task
-    time: usize,
+    pub time: usize,
 }
 
 /// task exits and submit an exit code
@@ -43,11 +47,13 @@ pub fn sys_yield() -> isize {
     0
 }
 
+/// get current task's pid
 pub fn sys_getpid() -> isize {
     trace!("kernel: sys_getpid pid:{}", current_task().unwrap().pid.0);
     current_task().unwrap().pid.0 as isize
 }
 
+/// create a new task which is a copy of current task
 pub fn sys_fork() -> isize {
     trace!("kernel:pid[{}] sys_fork", current_task().unwrap().pid.0);
     let current_task = current_task().unwrap();
@@ -63,6 +69,7 @@ pub fn sys_fork() -> isize {
     new_pid as isize
 }
 
+/// load a new program into current task
 pub fn sys_exec(path: *const u8) -> isize {
     trace!("kernel:pid[{}] sys_exec", current_task().unwrap().pid.0);
     let token = current_user_token();
@@ -140,7 +147,11 @@ pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
         "kernel:pid[{}] sys_task_info NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let token = current_user_token();
+    let ti = translated_refmut(token, _ti);
+    let task_info = current_task_info();
+    *ti = task_info;
+    0
 }
 
 /// YOUR JOB: Implement mmap.
@@ -194,7 +205,7 @@ pub fn sys_spawn(_path: *const u8) -> isize {
     }
 }
 
-// YOUR JOB: Set task priority.
+/// YOUR JOB: Set task priority.
 pub fn sys_set_priority(_prio: isize) -> isize {
     trace!(
         "kernel:pid[{}] sys_set_priority NOT IMPLEMENTED",
