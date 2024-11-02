@@ -9,8 +9,8 @@ use super::{fetch_task, TaskStatus};
 use super::{TaskContext, TaskControlBlock};
 use crate::sync::UPSafeCell;
 use crate::timer::get_time_ms;
-use crate::config::MAX_SYSCALL_NUM;
 use crate::trap::TrapContext;
+use crate::syscall::TaskInfo;
 use alloc::sync::Arc;
 use lazy_static::*;
 
@@ -105,30 +105,27 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
         .get_trap_cx()
 }
 
-pub fn current_task_running_time() -> usize {
+///Record the number of syscalls of the current task
+pub fn current_task_count_syscall(syscall_id: usize) {
+    let processor = PROCESSOR.exclusive_access();
+    let task = processor.current.as_ref().unwrap();
+    let mut task_inner = task.inner_exclusive_access();
+    task_inner.task_syscall_times[syscall_id] += 1;
+}
+
+///Get the information of current task
+pub fn current_task_info() -> TaskInfo {
     let task = current_task().unwrap();
     let task_inner = task.inner_exclusive_access();
     let current_time = get_time_ms();
     let running_time = current_time - task_inner.task_stime;
-    running_time
-}
 
-pub fn current_task_syscall_times() -> [u32; MAX_SYSCALL_NUM] {
-    let task = current_task().unwrap();
-    let task_inner = task.inner_exclusive_access();
-    task_inner.task_syscall_times
-}
-
-pub fn current_task_status() -> TaskStatus {
-    let task = current_task().unwrap();
-    let task_inner = task.inner_exclusive_access();
-    task_inner.task_status
-}
-
-pub fn current_task_count_syscall(syscall_id: usize) {
-    let task = take_current_task().unwrap();
-    let mut task_inner = task.inner_exclusive_access();
-    task_inner.task_syscall_times[syscall_id] += 1;
+    let task_info = TaskInfo {
+        status: task_inner.task_status,
+        syscall_times: task_inner.task_syscall_times,
+        time: running_time,
+    };
+    task_info
 }
 
 ///Return to idle control flow for new scheduling
