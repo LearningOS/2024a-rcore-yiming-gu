@@ -9,6 +9,7 @@ use crate::{
     task::{
         add_task, current_task, current_user_token, exit_current_and_run_next,
         suspend_current_and_run_next, TaskStatus, current_task_info,
+        current_task_mmap, current_task_munmap,
     },
     timer::get_time_us,
 };
@@ -160,7 +161,7 @@ pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
         "kernel:pid[{}] sys_mmap NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    current_task_mmap(_start, _len, _port)
 }
 
 /// YOUR JOB: Implement munmap.
@@ -169,7 +170,7 @@ pub fn sys_munmap(_start: usize, _len: usize) -> isize {
         "kernel:pid[{}] sys_munmap NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    current_task_munmap(_start, _len)
 }
 
 /// change data segment size
