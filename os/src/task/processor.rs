@@ -11,6 +11,7 @@ use crate::sync::UPSafeCell;
 use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
 use crate::syscall::TaskInfo;
+use crate::mm::{MapPermission, VPNRange, VirtAddr};
 use alloc::sync::Arc;
 use lazy_static::*;
 
@@ -136,4 +137,79 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     unsafe {
         __switch(switched_task_cx_ptr, idle_task_cx_ptr);
     }
+}
+
+///current task map memory
+pub fn current_task_mmap(_start: usize, _len: usize, _port: usize) -> isize {
+    let start_va = VirtAddr::from(_start);
+    let end_va = VirtAddr::from(_start + _len);
+    if start_va.page_offset() != 0 || _port & !0x7 != 0 || _port & 0x7 == 0{
+        return -1;
+    }
+    let start_vpn = start_va.floor();
+    let end_vpn = end_va.ceil();
+
+    let processor = PROCESSOR.exclusive_access();
+    let task = processor.current.as_ref().unwrap();
+    let mut task_inner = task.inner_exclusive_access();
+    let memory_set = &mut task_inner.memory_set;
+
+    let vpn_range = VPNRange {
+        l: start_vpn,
+        r: end_vpn,
+    };
+
+    for vpn in vpn_range {
+        if let Some(vpn_map) = memory_set.translate(vpn) {
+            if vpn_map.is_valid() {
+                return -1;
+            }
+        }
+    }
+
+    let mut map_permission = MapPermission::U;
+    map_permission |= MapPermission::from_bits((_port << 1) as u8).unwrap();
+
+    memory_set.insert_framed_area(start_va, end_va, map_permission);
+
+    0
+}
+
+///current task unmap memory
+pub fn current_task_munmap(_start: usize, _len: usize) -> isize {
+    let start_va = VirtAddr::from(_start);
+    let end_va = VirtAddr::from(_start + _len);
+    if start_va.page_offset() != 0 {
+        return -1;
+    }
+    let start_vpn = start_va.floor();
+    let end_vpn = end_va.ceil();
+
+    let processor = PROCESSOR.exclusive_access();
+    let task = processor.current.as_ref().unwrap();
+    let mut task_inner = task.inner_exclusive_access();
+    let memory_set = &mut task_inner.memory_set;
+
+    let vpn_range = VPNRange {
+        l: start_vpn,
+        r: end_vpn,
+    };
+
+    for vpn in vpn_range {
+        let pte = memory_set.translate(vpn);
+        if pte.is_none() {
+            return -1;
+        }
+        else {
+            if let Some(vpn_map) = pte {
+                if !vpn_map.is_valid() {
+                    return -1;
+                }
+            }
+        }
+    }
+
+    memory_set.remove_area_with_start_vpn(start_vpn);
+
+    0
 }
