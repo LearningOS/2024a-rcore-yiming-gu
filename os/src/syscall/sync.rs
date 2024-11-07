@@ -1,5 +1,5 @@
 use crate::sync::{Condvar, Mutex, MutexBlocking, MutexSpin, Semaphore};
-use crate::task::{block_current_and_run_next, current_process, current_task};
+use crate::task::{block_current_and_run_next, current_process, current_task, TaskStatus,};
 use crate::timer::{add_timer, get_time_ms};
 use alloc::sync::Arc;
 /// sleep syscall
@@ -71,6 +71,9 @@ pub fn sys_mutex_lock(mutex_id: usize) -> isize {
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
     let mutex = Arc::clone(process_inner.mutex_list[mutex_id].as_ref().unwrap());
+    if mutex.is_locked() && process_inner.deadlock_detection {
+        return -0xDEAD;
+    }
     drop(process_inner);
     drop(process);
     mutex.lock();
@@ -165,6 +168,26 @@ pub fn sys_semaphore_down(sem_id: usize) -> isize {
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
     let sem = Arc::clone(process_inner.semaphore_list[sem_id].as_ref().unwrap());
+
+    let mut deadlock = true;
+
+    if sem.inner.exclusive_access().count == 0 && process_inner.deadlock_detection {
+        for task_op in &process_inner.tasks {
+            if let Some(task) = task_op {
+                if task.inner_exclusive_access().task_status == TaskStatus::Ready && task.inner_exclusive_access().res.as_ref().unwrap().tid != 0 {
+                    deadlock = false;
+                }
+            }
+        }
+    }
+    else {
+        deadlock = false;
+    }
+
+    if deadlock {
+        return -0xDEAD;
+    }
+
     drop(process_inner);
     sem.down();
     0
@@ -247,5 +270,8 @@ pub fn sys_condvar_wait(condvar_id: usize, mutex_id: usize) -> isize {
 /// YOUR JOB: Implement deadlock detection, but might not all in this syscall
 pub fn sys_enable_deadlock_detect(_enabled: usize) -> isize {
     trace!("kernel: sys_enable_deadlock_detect NOT IMPLEMENTED");
-    -1
+    let process = current_process();
+    let mut process_inner = process.inner_exclusive_access();
+    process_inner.deadlock_detection = _enabled == 1;
+    0
 }
